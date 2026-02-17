@@ -8,6 +8,9 @@
 
 ## セットアップ（Windows / PowerShell）
 
+python -m pip install -r requirements.txt
+
+
 py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install -U pip
 
@@ -18,6 +21,12 @@ py -3.12 -m venv .venv
 
 python .\apps\main.py
 
+python apps/main.py --html "path/to/report.html" --out "out"
+# 軽量モード
+python apps/main.py --html "path/to/report.html" --out "out" --no-embed
+
+
+python apps/gui.py
 
 
 

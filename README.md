@@ -31,3 +31,13 @@ python .\apps\main.py
 
 このテンプレは必要に応じて拡張してよいが、
 **構造の意味（役割分離）は崩さないこと**。
+
+
+
+# hypermill-nctools-html-exporter
+
+hyperMILLが出力するNCツール一覧HTML（Werkzeugdatenbank）を解析し、NCツールが1行ずつ並ぶXLSXを生成します。
+
+## Install
+```bash
+pip install -r requirements.txt
