@@ -1,7 +1,8 @@
+# src/hypermill_nctools_html_exporter/export_xlsx_blocks.py
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Tuple, Literal
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
@@ -13,6 +14,44 @@ from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
 from openpyxl.drawing.xdr import XDRPositiveSize2D
 
 from .model import NcToolRecord
+
+
+Lang = Literal["ja", "en"]
+
+_LABELS = {
+    "ja": {
+        "sheet_title": "Report",
+        "headers": ["No", "NCツール名", "呼径", "識別", "補正H", "補正D", "画像", "種別", "名称", "詳細", "追記"],
+        "kind_holder": "ホルダー",
+        "kind_extension": "エクステンション",
+        "kind_tool": "工具",
+        "d_diameter": "直径",
+        "d_flutes": "刃数",
+        "d_radius": "R",
+        "d_shank": "シャンク",
+        "d_taper": "テーパー角",
+        "d_rotation": "回転",
+        "d_ext_overhang": "extension突き出し",
+        "d_tool_overhang": "工具突き出し",
+        "d_overhang": "突き出し長さ",
+    },
+    "en": {
+        "sheet_title": "Report",
+        "headers": ["No", "NC Tool", "Caliber", "Ident", "H", "D", "Image", "Type", "Name", "Details", "Note"],
+        "kind_holder": "holder",
+        "kind_extension": "extension",
+        "kind_tool": "tool",
+        "d_diameter": "Diameter",
+        "d_flutes": "Flutes",
+        "d_radius": "R",
+        "d_shank": "Shank",
+        "d_taper": "Taper",
+        "d_rotation": "Rotation",
+        "d_ext_overhang": "Extension overhang",
+        "d_tool_overhang": "Tool overhang",
+        "d_overhang": "Overhang",
+    },
+}
 
 
 def _fit_columns(ws, widths: dict[int, float]) -> None:
@@ -105,6 +144,7 @@ def export_blocks_f2_xlsx(
     embed_images: bool = True,
     block_rows: int = 3,
     start_row: int = 2,
+    lang: Lang = "ja",
 ) -> Tuple[int, int]:
     """
     ヘッダー:
@@ -112,24 +152,26 @@ def export_blocks_f2_xlsx(
 
     呼径/識別/補正H/補正D は手入力欄なので常に空で出力する。
     """
+    L = _LABELS.get(lang, _LABELS["ja"])
+
     out_xlsx.parent.mkdir(parents=True, exist_ok=True)
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Report"
+    ws.title = L["sheet_title"]
 
     # columns
     COL_NO = 1
     COL_NCNAME = 2
-    COL_CALIBER = 3   # 呼径（手入力）
-    COL_IDENT = 4     # 識別（手入力）
-    COL_H = 5         # 補正H（手入力）
-    COL_D = 6         # 補正D（手入力）
+    COL_CALIBER = 3   # 手入力
+    COL_IDENT = 4     # 手入力
+    COL_H = 5         # 手入力
+    COL_D = 6         # 手入力
     COL_IMG = 7       # 画像
     COL_KIND = 8      # 種別
     COL_COMP = 9      # 名称
     COL_DETAIL = 10   # 詳細
-    COL_NOTE = 11     # 追記（手入力）
+    COL_NOTE = 11     # 手入力
 
     sep = " / "
 
@@ -138,15 +180,15 @@ def export_blocks_f2_xlsx(
         {
             COL_NO: 6,
             COL_NCNAME: 24,
-            COL_CALIBER: 7,  # ★指定
-            COL_IDENT: 7,    # ★指定
-            COL_H: 7,        # ★指定
-            COL_D: 7,        # ★指定
+            COL_CALIBER: 7,
+            COL_IDENT: 7,
+            COL_H: 7,
+            COL_D: 7,
             COL_IMG: 40,
             COL_KIND: 12,
             COL_COMP: 55,
             COL_DETAIL: 55,
-            COL_NOTE: 50,    # ★指定
+            COL_NOTE: 50,
         },
     )
 
@@ -157,10 +199,7 @@ def export_blocks_f2_xlsx(
 
     # header
     ws.row_dimensions[1].height = 22
-    headers = [
-        "No", "NCツール名", "呼径", "識別", "補正H", "補正D",
-        "画像", "種別", "名称", "詳細", "追記"
-    ]
+    headers = L["headers"]
     for i, text in enumerate(headers, start=1):
         cell = ws.cell(1, i)
         cell.value = text
@@ -198,30 +237,30 @@ def export_blocks_f2_xlsx(
 
         # row1 holder
         holder = rec.holder_name or rec.holder_page_name
-        ws.cell(r1, COL_KIND).value = "holder"
+        ws.cell(r1, COL_KIND).value = L["kind_holder"]
         ws.cell(r1, COL_COMP).value = _safe_str(holder)
         ws.cell(r1, COL_DETAIL).value = (
-            f"直径: {_safe_str(rec.tool_diameter_mm)}{sep}"
-            f"刃数: {_safe_str(rec.tool_flutes)}{sep}"
-            f"R: {_safe_str(rec.tool_corner_radius_mm)}\n"
-            f"シャンク: {_safe_str(rec.tool_shank_d_mm)}\n"
-            f"テーパー角: {_safe_str(rec.tool_taper_angle_deg)}{sep}"
-            f"回転: {_safe_str(rec.spindle_rotation)}"
+            f"{L['d_diameter']}: {_safe_str(rec.tool_diameter_mm)}{sep}"
+            f"{L['d_flutes']}: {_safe_str(rec.tool_flutes)}{sep}"
+            f"{L['d_radius']}: {_safe_str(rec.tool_corner_radius_mm)}\n"
+            f"{L['d_shank']}: {_safe_str(rec.tool_shank_d_mm)}\n"
+            f"{L['d_taper']}: {_safe_str(rec.tool_taper_angle_deg)}{sep}"
+            f"{L['d_rotation']}: {_safe_str(rec.spindle_rotation)}"
         )
 
         # row2 extension
-        ws.cell(r2, COL_KIND).value = "extension"
+        ws.cell(r2, COL_KIND).value = L["kind_extension"]
         ws.cell(r2, COL_COMP).value = _safe_str(getattr(rec, "extensions_str", ""))
         ws.cell(r2, COL_DETAIL).value = (
-            f"extension突き出し: {_safe_str(getattr(rec, 'ext_overhang_mm', '0'))}{sep}"
-            f"工具突き出し: {_safe_str(getattr(rec, 'tool_overhang_mm', ''))}"
+            f"{L['d_ext_overhang']}: {_safe_str(getattr(rec, 'ext_overhang_mm', '0'))}{sep}"
+            f"{L['d_tool_overhang']}: {_safe_str(getattr(rec, 'tool_overhang_mm', ''))}"
         )
 
         # row3 tool
         tool = rec.tool_page_name or rec.tool_name
-        ws.cell(r3, COL_KIND).value = "tool"
+        ws.cell(r3, COL_KIND).value = L["kind_tool"]
         ws.cell(r3, COL_COMP).value = _safe_str(tool)
-        ws.cell(r3, COL_DETAIL).value = f"突き出し長さ: {_safe_str(getattr(rec, 'overhang_mm', ''))}"
+        ws.cell(r3, COL_DETAIL).value = f"{L['d_overhang']}: {_safe_str(getattr(rec, 'overhang_mm', ''))}"
 
         # style
         for rr in (r1, r2, r3):

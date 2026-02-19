@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 import warnings
@@ -13,31 +13,117 @@ from .util import clean_text
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
-_RE_NCTOOL_H3 = re.compile(r"NCツール\(N\):(.+?)\s*\((\d+)\)\s*$")
-_RE_TOOL_H3 = re.compile(r"工具:\s*(.+?)\s*\((.+?)\)\s*$")
-_RE_HOLDER_H3 = re.compile(r"ホルダー:\s*(.+)\s*$")
-_RE_SUBHOLDER_H3 = re.compile(r"サブホルダー:\s*(.+)\s*$")
+# ----------------------------
+# h3 patterns (JA/EN)
+# ----------------------------
+_RE_NCTOOL_H3_JA = re.compile(r"NCツール\(N\):(.+?)\s*\((\d+)\)\s*$")
+_RE_NCTOOL_H3_EN = re.compile(r"NC-Tool:(.+?)\s*\((\d+)\)\s*$")
+
+_RE_TOOL_H3_JA = re.compile(r"工具:\s*(.+?)\s*\((.+?)\)\s*$")
+_RE_TOOL_H3_EN = re.compile(r"Tool:\s*(.+?)\s*\((.+?)\)\s*$")
+
+_RE_HOLDER_H3_JA = re.compile(r"ホルダー:\s*(.+)\s*$")
+_RE_HOLDER_H3_EN = re.compile(r"Holder:\s*(.+)\s*$")
+
+_RE_SUBHOLDER_H3_JA = re.compile(r"サブホルダー:\s*(.+)\s*$")
+# 英語HTMLでは extension が独立ページとして出る
+_RE_EXTENSION_H3_EN = re.compile(r"Extension:\s*(.+)\s*$")
+
+
+# ----------------------------
+# Key normalization
+# ----------------------------
+_GRID_HEADER_MAP = {
+    # coupling table
+    "カップリング種類": "coupling_type",
+    "Coupling type": "coupling_type",
+
+    "名称": "name",
+    "Name": "name",
+
+    # 日本語は「全長」、英語は「Reach」
+    "全長": "reach",
+    "Reach": "reach",
+}
+
+_KV_KEY_MAP = {
+    # NC Tool comment
+    "NCツール コメント": "nctool_comment",
+    "NC-Tool comment": "nctool_comment",
+
+    # Holder comment
+    "ホルダー コメント": "holder_comment",
+    "Holder comment": "holder_comment",
+
+    # Tool dims (JA/EN)
+    "直径": "diameter",
+    "Diameter": "diameter",
+
+    "コーナー半径": "corner_radius",
+    "Corner radius": "corner_radius",
+
+    "刃数": "cutting_edges",
+    "Cutting edges": "cutting_edges",
+
+    # 日本語版は "切削長さ (ap)"、英語版は "Cutting length"
+    "切削長さ (ap)": "cutting_length",
+    "Cutting length": "cutting_length",
+
+    "シャンク直径": "shank_diameter",
+    "Shank diameter": "shank_diameter",
+
+    "面取り長さ": "chamfer_length",
+    "Chamfer length": "chamfer_length",
+
+    "先端長さ": "tip_length",
+    "Tip length": "tip_length",
+
+    "テーパー角度": "cone_angle",
+    "Cone angle": "cone_angle",
+
+    "スピンドル回転方向": "spindle_orientation",
+    "Spindle orientation": "spindle_orientation",
+}
+
+
+def _norm_grid_header(h: str) -> str:
+    h = clean_text(h)
+    return _GRID_HEADER_MAP.get(h, h)
+
+
+def _norm_kv_key(k: str) -> str:
+    k = clean_text(k)
+    return _KV_KEY_MAP.get(k, k)
 
 
 def _parse_kv_table(table) -> Dict[str, str]:
+    """
+    2列/4列のKV表を dict で返す（キーは“正規化”して返す）
+    """
     d: Dict[str, str] = {}
     for tr in table.find_all("tr"):
         tds = [clean_text(td.get_text(" ", strip=True)) for td in tr.find_all("td")]
         if len(tds) == 2 and tds[0]:
-            d[tds[0]] = tds[1]
+            d[_norm_kv_key(tds[0])] = tds[1]
         elif len(tds) == 4:
             if tds[0]:
-                d[tds[0]] = tds[1]
+                d[_norm_kv_key(tds[0])] = tds[1]
             if tds[2]:
-                d[tds[2]] = tds[3]
+                d[_norm_kv_key(tds[2])] = tds[3]
     return d
 
 
 def _parse_grid_table(table) -> List[Dict[str, str]]:
+    """
+    1行目をヘッダとして扱うグリッド表を row dict のlistへ。
+    ヘッダは“正規化”して返す。
+    """
     trs = table.find_all("tr")
     if not trs:
         return []
-    header = [clean_text(td.get_text(" ", strip=True)) for td in trs[0].find_all("td")]
+    header_raw = [clean_text(td.get_text(" ", strip=True)) for td in trs[0].find_all("td")]
+    header = [_norm_grid_header(h) for h in header_raw]
+
     out: List[Dict[str, str]] = []
     for tr in trs[1:]:
         vals = [clean_text(td.get_text(" ", strip=True)) for td in tr.find_all("td")]
@@ -73,7 +159,6 @@ def _to_float_mm(s: str) -> float | None:
         return None
 
 
-
 def _fmt_mm(x: float | None) -> str:
     """
     40.0 -> '40', 40.123 -> '40.123'
@@ -94,10 +179,10 @@ def _build_extensions_str_from_coupling_rows(rows: List[Dict[str, str]]) -> str:
     """
     exts: List[str] = []
     for r in rows:
-        kind = (r.get("カップリング種類", "") or "").strip().lower()
+        kind = (r.get("coupling_type", "") or "").strip().lower()
         if kind in ("extension", "subholder", "ext"):
-            name = (r.get("名称", "") or "").strip()
-            ln = (r.get("全長", "") or "").strip()
+            name = (r.get("name", "") or "").strip()
+            ln = (r.get("reach", "") or "").strip()
             if not name and not ln:
                 continue
             if ln:
@@ -105,6 +190,14 @@ def _build_extensions_str_from_coupling_rows(rows: List[Dict[str, str]]) -> str:
             else:
                 exts.append(name)
     return " / ".join([e for e in exts if e])
+
+
+def _match_any(patterns: list[re.Pattern[str]], text: str) -> Optional[re.Match[str]]:
+    for pat in patterns:
+        m = pat.search(text)
+        if m:
+            return m
+    return None
 
 
 def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
@@ -145,9 +238,9 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
         h3 = clean_text(h3_el.get_text(" ", strip=True)) if h3_el else ""
 
         # -----------------------
-        # NCツール開始
+        # NCツール開始 (JA/EN)
         # -----------------------
-        m_nct = _RE_NCTOOL_H3.search(h3)
+        m_nct = _match_any([_RE_NCTOOL_H3_JA, _RE_NCTOOL_H3_EN], h3)
         if m_nct:
             finalize_current()
 
@@ -159,7 +252,7 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
             nct_tables = p.find_all("table")
             if len(nct_tables) >= 2:
                 kv = _parse_kv_table(nct_tables[1])
-                current.nctool_comment = kv.get("NCツール コメント", "")
+                current.nctool_comment = kv.get("nctool_comment", "")
             else:
                 current.warnings.append("NCツールページのtableが不足しています")
 
@@ -179,9 +272,9 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
                 ext_found = False
 
                 for r in rows:
-                    kind = (r.get("カップリング種類", "") or "").strip().lower()
-                    name = r.get("名称", "") or ""
-                    ln_str = r.get("全長", "") or ""
+                    kind = (r.get("coupling_type", "") or "").strip().lower()
+                    name = r.get("name", "") or ""
+                    ln_str = r.get("reach", "") or ""
                     ln = _to_float_mm(ln_str)
 
                     if kind == "holder":
@@ -202,23 +295,16 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
                 # extension表示文字列
                 current.extensions_str = _build_extensions_str_from_coupling_rows(rows)
 
-
                 # --- 計算値 ---
-                # extension突き出し（無いなら0）
                 current.ext_overhang_mm = _fmt_mm(ext_sum) if ext_found else "0"
-
-                # 工具突き出し（tool_lengthの数値版）
                 current.tool_overhang_mm = _fmt_mm(tool_len) if tool_len is not None else ""
-
-                # 突き出し長さ = ext + tool（toolが無いときは空）
                 overhang = (ext_sum + tool_len) if tool_len is not None else None
                 current.overhang_mm = _fmt_mm(overhang) if overhang is not None else ""
-
 
             else:
                 current.warnings.append("NCツールページの構成部品テーブル（border=1）が見つかりません")
 
-            # 画像
+            # 画像（このページ内の img を拾う）
             img = p.find("img")
             if img and img.get("src"):
                 current.image_rel_src = img["src"]
@@ -232,9 +318,9 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
             continue
 
         # -----------------------
-        # Tool page
+        # Tool page (JA/EN)
         # -----------------------
-        m_tool = _RE_TOOL_H3.search(h3)
+        m_tool = _match_any([_RE_TOOL_H3_JA, _RE_TOOL_H3_EN], h3)
         if m_tool:
             current.tool_page_name = clean_text(m_tool.group(1))
             current.tool_type = clean_text(m_tool.group(2))
@@ -242,15 +328,16 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
             tool_tables = p.find_all("table")
             if tool_tables:
                 kv = _parse_kv_table(tool_tables[0])
-                current.tool_diameter_mm = kv.get("直径", "")
-                current.tool_corner_radius_mm = kv.get("コーナー半径", "")
-                current.tool_flutes = kv.get("刃数", "")
-                current.tool_cut_length_ap_mm = kv.get("切削長さ (ap)", "")
-                current.tool_shank_d_mm = kv.get("シャンク直径", "")
-                current.tool_chamfer_len_mm = kv.get("面取り長さ", "")
-                current.tool_tip_len_mm = kv.get("先端長さ", "")
-                current.tool_taper_angle_deg = kv.get("テーパー角度", "")
-                current.spindle_rotation = kv.get("スピンドル回転方向", "")
+
+                current.tool_diameter_mm = kv.get("diameter", "")
+                current.tool_corner_radius_mm = kv.get("corner_radius", "")
+                current.tool_flutes = kv.get("cutting_edges", "")
+                current.tool_cut_length_ap_mm = kv.get("cutting_length", "")
+                current.tool_shank_d_mm = kv.get("shank_diameter", "")
+                current.tool_chamfer_len_mm = kv.get("chamfer_length", "")
+                current.tool_tip_len_mm = kv.get("tip_length", "")
+                current.tool_taper_angle_deg = kv.get("cone_angle", "")
+                current.spindle_rotation = kv.get("spindle_orientation", "")
             else:
                 current.warnings.append("工具ページの寸法tableが見つかりません")
 
@@ -264,6 +351,7 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
                 cond_rows = _parse_grid_table(cond_table)
                 if cond_rows:
                     c0 = cond_rows[0]
+                    # ここは英語HTMLでも列名が "S (n)" 等のままなのでそのままでOK
                     current.cond_S_n = c0.get("S (n)", "")
                     current.cond_FX = c0.get("FX", "")
                     current.cond_FZ = c0.get("FZ", "")
@@ -276,30 +364,35 @@ def parse_nctools_html(html_path: Path) -> Tuple[List[NcToolRecord], List[str]]:
             continue
 
         # -----------------------
-        # Holder page
+        # Holder page (JA/EN)
         # -----------------------
-        m_holder = _RE_HOLDER_H3.search(h3)
+        m_holder = _match_any([_RE_HOLDER_H3_JA, _RE_HOLDER_H3_EN], h3)
         if m_holder:
             current.holder_page_name = clean_text(m_holder.group(1))
             holder_tables = p.find_all("table")
             if holder_tables:
                 kvh = _parse_kv_table(holder_tables[0])
-                current.holder_comment = kvh.get("ホルダー コメント", "")
+                current.holder_comment = kvh.get("holder_comment", "")
             else:
                 current.warnings.append("ホルダーページのtableが見つかりません")
             continue
 
         # -----------------------
-        # Subholder page（ズレ原因ページ）
+        # Subholder/Extension page（ズレ原因ページ）
         # extension自体はNCツールページで拾っているので、ここでは検出ログ程度
         # -----------------------
-        m_sub = _RE_SUBHOLDER_H3.search(h3)
+        m_sub = _RE_SUBHOLDER_H3_JA.search(h3)
         if m_sub:
             name = clean_text(m_sub.group(1))
             current.warnings.append(f"サブホルダーページ検出: {name}")
             continue
 
-        # その他ページは無視（安全）
+        m_ext = _RE_EXTENSION_H3_EN.search(h3)
+        if m_ext:
+            name = clean_text(m_ext.group(1))
+            current.warnings.append(f"Extension page detected: {name}")
+            continue
+
         continue
 
     finalize_current()

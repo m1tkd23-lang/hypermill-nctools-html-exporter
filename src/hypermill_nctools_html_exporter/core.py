@@ -1,8 +1,8 @@
-﻿# src\hypermill_nctools_html_exporter\core.py
+﻿# src/hypermill_nctools_html_exporter/core.py
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Callable, Dict, Any, Tuple, List
+from typing import Optional, Callable, Dict, Any, Tuple, List, Literal
 
 from openpyxl import load_workbook
 
@@ -14,6 +14,7 @@ from .export_xlsx_blocks import export_blocks_f2_xlsx
 
 
 ProgressCb = Callable[[int, int, str], None]  # (done, total, message)
+OutLang = Literal["ja", "en"]
 
 
 def export_from_html(
@@ -113,6 +114,7 @@ def export_report_f2_from_html(
     embed_images: bool = True,
     max_px: int = 320,
     progress: Optional[ProgressCb] = None,
+    out_lang: OutLang = "ja",
 ) -> Tuple[Path, dict]:
     """
     HTML1つ → F2帳票（3行ブロック）XLSX
@@ -164,7 +166,12 @@ def export_report_f2_from_html(
 
     out_xlsx = out_folder / f"nctools_report__{base_name}.xlsx"
     try:
-        written, img_count = export_blocks_f2_xlsx(records, out_xlsx, embed_images=embed_images)
+        written, img_count = export_blocks_f2_xlsx(
+            records,
+            out_xlsx,
+            embed_images=embed_images,
+            lang=out_lang,
+        )
     finally:
         for p in temp_files:
             try:
@@ -181,5 +188,6 @@ def export_report_f2_from_html(
         "records": written,
         "embedded_images": img_count,
         "errors": len(errors_for_sheet),
+        "out_lang": out_lang,
     }
     return out_xlsx, summary

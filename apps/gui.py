@@ -1,3 +1,4 @@
+# apps/gui.py
 from __future__ import annotations
 
 import sys
@@ -8,8 +9,9 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-# src を import path に追加
-sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
+# 開発実行時だけ src を import path に追加（exe化では -p src で解決する）
+if not getattr(sys, "frozen", False):
+    sys.path.append(str(Path(__file__).resolve().parents[1] / "src"))
 
 from hypermill_nctools_html_exporter.core import export_report_f2_from_html
 
@@ -17,7 +19,7 @@ from hypermill_nctools_html_exporter.core import export_report_f2_from_html
 def main() -> int:
     root = tk.Tk()
     root.title("hypermill-nctools-html-exporter")
-    root.geometry("860x480")
+    root.geometry("860x520")
 
     frm = ttk.Frame(root, padding=12)
     frm.pack(fill="both", expand=True)
@@ -49,18 +51,25 @@ def main() -> int:
 
     ttk.Button(frm, text="参照", command=choose_out).grid(row=1, column=2)
 
+    # Output language
+    ttk.Label(frm, text="出力言語").grid(row=2, column=0, sticky="w")
+    lang_var = tk.StringVar(value="日本語")
+    lang_combo = ttk.Combobox(frm, textvariable=lang_var, state="readonly", width=12)
+    lang_combo["values"] = ("日本語", "English")
+    lang_combo.grid(row=2, column=1, sticky="w")
+
     # max_px
-    ttk.Label(frm, text="画像最大辺(px)").grid(row=2, column=0, sticky="w")
+    ttk.Label(frm, text="画像最大辺(px)").grid(row=3, column=0, sticky="w")
     maxpx_var = tk.StringVar(value="320")
-    ttk.Entry(frm, textvariable=maxpx_var, width=10).grid(row=2, column=1, sticky="w")
+    ttk.Entry(frm, textvariable=maxpx_var, width=10).grid(row=3, column=1, sticky="w")
 
     # progress
     status_var = tk.StringVar(value="待機中")
     prog = ttk.Progressbar(frm, orient="horizontal", mode="determinate")
     lbl = ttk.Label(frm, textvariable=status_var)
 
-    prog.grid(row=4, column=0, columnspan=3, sticky="we", pady=(16, 0))
-    lbl.grid(row=5, column=0, columnspan=3, sticky="w", pady=(6, 0))
+    prog.grid(row=5, column=0, columnspan=3, sticky="we", pady=(16, 0))
+    lbl.grid(row=6, column=0, columnspan=3, sticky="w", pady=(6, 0))
 
     frm.columnconfigure(1, weight=1)
 
@@ -110,6 +119,8 @@ def main() -> int:
             messagebox.showerror("入力エラー", "画像最大辺(px) は正の整数で指定してください")
             return
 
+        out_lang = "ja" if lang_var.get() == "日本語" else "en"
+
         busy["flag"] = True
         prog["value"] = 0
         status_var.set("開始...")
@@ -125,6 +136,7 @@ def main() -> int:
                     embed_images=True,   # GUIでは埋め込み固定
                     max_px=max_px,       # GUI入力を反映
                     progress=progress,
+                    out_lang=out_lang,
                 )
                 q.put(("done", 1, 1, f"F2帳票を出力しました:\n{out_xlsx}"))
             except Exception as e:
@@ -133,7 +145,7 @@ def main() -> int:
         threading.Thread(target=worker, daemon=True).start()
 
     ttk.Button(frm, text="実行（HTML→XLSX）", command=run_export).grid(
-        row=6, column=0, columnspan=3, sticky="we", pady=(14, 0)
+        row=7, column=0, columnspan=3, sticky="we", pady=(14, 0)
     )
 
     root.mainloop()

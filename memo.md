@@ -30,6 +30,9 @@ python apps/gui.py
 
 
 
+#exe化
+py -m PyInstaller --noconfirm --clean --onedir --name hypermill-nctools-html-exporter_rev1_1 --windowed -p src apps/gui.py
+
 ### AI（設計補助・実装支援）への運用ルール 
 #### 受け取りタイミングの意味 
 - **作業開始時に本.mdを受け取った場合** 
@@ -50,7 +53,7 @@ function Show-Tree {
     [string]$Root = ".",
 
     [string[]]$ExcludeDirNames = @(
-      ".git", ".venv", "__pycache__", "build", "dist",
+      ".git", ".venv", "__pycache__", "build", "dist", "html",
       ".webview_storage", ".mypy_cache", ".pytest_cache", ".ruff_cache",
       "node_modules"
     ),
